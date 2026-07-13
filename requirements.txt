@@ -1,0 +1,12 @@
+PySide6>=6.5.0
+qtawesome>=1.4.1
+paddleocr>=2.7.0
+paddlepaddle>=2.5.0
+# PaddleOCR 3.x installs this exact build. Using opencv-python alongside it
+# creates two distributions that overwrite the same cv2 package.
+opencv-contrib-python==4.10.0.84
+python-pptx>=0.6.21
+numpy>=1.24.0
+Pillow>=9.0.0
+PyMuPDF>=1.23.0
+requests>=2.31.0

@@ -1,0 +1,19 @@
+OCRPDF-TO-PPT 启动说明
+======================
+
+日常使用：
+  双击“一键启动 OCRPDF-TO-PPT.bat”。
+
+如果提示环境或依赖损坏：
+  双击“安装或修复依赖.bat”，等待完成后再启动。
+
+运行环境：
+  程序使用项目内独立的 .venv-launcher（Python 3.13），不会使用原来
+  Python 3.14 创建的 .venv。这样可以兼容 PaddlePaddle / PaddleOCR。
+
+日志：
+  无窗口启动时如发生异常，详情保存在 logs\launcher.log。
+
+说明：
+  第一次真正执行 OCR 时，PaddleOCR 仍可能联网下载识别模型。
+  IOPaint 去字功能是可选服务，不影响程序、OCR 和 PPT 导出的基本启动。

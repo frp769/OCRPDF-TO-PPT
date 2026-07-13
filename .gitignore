@@ -1,0 +1,39 @@
+# Local tooling and agent metadata
+.agents/
+.codex/
+.venv/
+.venv-*/
+.idea/
+.vscode/
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime state and user-specific configuration
+settings.json
+logs/
+*.log
+_runtime_cache/
+_ai_cache/
+.paddlex/
+
+# Downloaded OCR models and generated documents
+model/
+*.pdf
+*.ppt
+*.pptx
+
+# Local distribution archives and obsolete working notes
+*.zip
+*.rar
+READMEold.md
+
+# Packaging output
+build/
+dist/
+*.egg-info/
+

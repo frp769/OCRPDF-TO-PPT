@@ -1,182 +1,254 @@
-English | [中文](README.zh-CN.md)
+[中文](README.zh-CN.md) | English
 
 # OCRPDF-TO-PPT (PowerOCR Presentation)
-<img width="4085" height="2070" alt="Clip_2026-01-27_21-17-54" src="https://github.com/user-attachments/assets/0dbba796-fd55-4128-8087-975e6bb1bfad" />
-A lightweight desktop tool that turns images / PDF pages into an **editable PowerPoint (.pptx)** with OCR text boxes.
 
-Core idea:
-- Each slide uses the original image (or an inpainted "clean background" image) as the background.
-- OCR results are converted to **editable PowerPoint text boxes** positioned on top of the background.
+OCRPDF-TO-PPT is a Windows desktop application that turns images and PDF pages into editable PowerPoint files (`.pptx`) with OCR. The original image, or a cleaned copy with source text removed, becomes the slide background. Recognized text is exported as movable, editable PowerPoint text boxes.
 
-## Features
+Daily use does not require a console. After installing the dependencies, double-click **`一键启动 OCRPDF-TO-PPT.bat`** in the project root.
 
-- Import: images (PNG/JPG/...) and PDFs (render each page to an image)
-- OCR: PaddleOCR 2.x / 3.x (auto-detect), CPU/GPU (auto fallback to CPU)
-- Batch workflow: thumbnails, add/duplicate/reorder slides, undo/redo
-- Edit boxes on canvas: move/resize, edit text, copy/cut/paste, format brush
-- ROI (Region of Interest): OCR / inpaint only within a selected rectangle
-- Text box background: global and per-box background color + alpha, eyedropper tool
-- Export PPTX + Preview (F5)
-- Optional: call **IOPaint** API to remove the original text on background before exporting (avoid "double text")
+![Current PowerOCR main window](docs/images/main-window.png)
+
+## Highlights
+
+- Ribbon interface organized into Home, View, and Settings tabs.
+- Multi-page workflow with image/PDF import, blank slides, duplication, ordering, and thumbnail navigation.
+- OCR for the current page or all pages, with an optional ROI for targeted processing.
+- Editable boxes with move, resize, text editing, font size, color, bold, alignment, background color, and opacity controls.
+- **Multi-select deletion:** hold `Ctrl` and click boxes to add or remove them from the selection, then press `Delete` to remove every selected box at once.
+- Three cleaning modes: Smart Clean, Solid Fill, and IOPaint, each available for the current page or all pages.
+- Editable PPTX output that remains easy to refine in PowerPoint.
+- One-click launcher that uses the project environment and opens the GUI without a console window.
+
+## Current interface
+
+The View tab contains text-background, color-picking, opacity, and PowerPoint preview controls. The Settings tab contains OCR, cleaning, language, and editing controls.
+
+<p>
+  <img src="docs/images/view-tab.png" alt="View tab" width="49%">
+  <img src="docs/images/settings-tab.png" alt="Settings tab" width="49%">
+</p>
+
+### Home
+
+- Clipboard: paste text boxes or images.
+- Slides: new blank slide, duplicate, delete, move up, and move down.
+- Import: images, PDFs, and text boxes.
+- OCR: current page or all pages.
+- Export: create a PPTX file.
+- ROI: select or clear a processing region.
+- Cleaning: Smart Clean, Solid Fill, IOPaint, preview, and restore original.
+
+### View
+
+- Enable or disable text-box backgrounds in the exported presentation.
+- Set a global background color, pick a color from the image, and adjust background opacity.
+- Preview the PowerPoint result.
+
+### Settings
+
+- Open OCR Settings and Clean Settings, or reload the OCR engine.
+- Switch between Auto/System, Chinese, and English.
+- Access undo, redo, cut, copy, and paste.
 
 ## Requirements
 
-- Python 3.13 (64-bit; required by the bundled Windows setup/launcher scripts)
-- OS: Windows is best-tested; macOS/Linux should also work if PaddlePaddle wheels are available
+- 64-bit Windows 10 or 11.
+- Python 3.13; the bundled Windows setup and launch scripts check this version.
+- An internet connection for first-time dependency installation and OCR model downloads.
+- Several GB of free disk space is recommended for the Python environment and OCR models.
 
-Notes about PaddlePaddle:
-- PaddlePaddle wheels availability depends on your OS/Python version.
-- For GPU, install the correct PaddlePaddle GPU build according to the official guide.
+PaddlePaddle support depends on the Python, CUDA, and driver combination. CPU mode works by default. For GPU acceleration, install the PaddlePaddle build that matches the local CUDA environment.
 
-## Install
+## Quick start (recommended)
 
-1) Clone the repo
+### 1. Get the project
 
-```bash
+```powershell
 git clone https://github.com/frp769/OCRPDF-TO-PPT.git
 cd OCRPDF-TO-PPT
 ```
 
-2) Create & activate a virtual environment
+You can also download and extract the repository ZIP.
 
-Windows (PowerShell):
+### 2. Install or repair dependencies
+
+For the first run, double-click `安装或修复依赖.bat`. It checks Python 3.13, creates or repairs `.venv-launcher`, installs the dependencies, and validates the key imports.
+
+### 3. Start the application
+
+Double-click `一键启动 OCRPDF-TO-PPT.bat`.
+
+The launcher runs a dependency preflight and opens the GUI through `pythonw.exe`. You therefore **do not need to run `python main.py` in a console**. If startup fails, inspect `logs/launcher.log` or run the dependency repair script again.
+
+PaddleOCR/PaddleX may download models the first time OCR is used. Models remain in the local cache and are not uploaded to GitHub.
+
+## Workflow
+
+### 1. Import images or a PDF
+
+- Click Import Image or press `Ctrl+O`.
+- Click Import PDF or press `Ctrl+Shift+O`.
+- PDF pages are rendered as images and added to the thumbnail list on the left.
+- You can also create blank slides, duplicate the current slide, delete slides, and change their order.
+
+### 2. Run OCR
+
+- OCR Current recognizes only the active page (`Ctrl+Enter`).
+- OCR All processes every page (`Ctrl+R`).
+- To process only part of a page, draw an ROI first; clear it when you want to return to the full-page range.
+
+### 3. Edit recognized content
+
+- Click a text box to select it, drag it to move it, or drag its handles to resize it.
+- Double-click a text box to edit its text.
+- Use the right properties panel to change text, size, color, bold, alignment, background, and opacity.
+- Each box can opt in or out of cleaning and can use its own cleaning mode.
+- Apply Style to All Boxes on Slide quickly makes the current page consistent.
+- `Ctrl+C / Ctrl+X / Ctrl+V` copy, cut, and paste text boxes.
+- With no box selected, `Ctrl+V` can paste a clipboard image; `Ctrl+Shift+V` pastes an image directly.
+
+#### Multi-select and batch delete
+
+1. Hold `Ctrl` and click each box you want to add to or remove from the selection.
+2. All selected boxes stay selected.
+3. Press `Delete`, or use Delete Selected Boxes in the right panel, to remove the entire selection at once.
+4. Press `Ctrl+Z` if you need to undo the deletion.
+
+### 4. Remove source text from the background
+
+Cleaning reduces the double-text effect caused by original text remaining in the image underneath the new OCR boxes.
+
+- **Smart Clean:** prefers solid fill for simple backgrounds and automatically uses IOPaint for complex textures or explicitly configured boxes.
+- **Solid Fill:** fills text regions with a sampled background color; it works best on white or uniform backgrounds.
+- **IOPaint:** always calls the optional local IOPaint API and is useful for photos or textured backgrounds.
+
+Each mode can process the current page or every page. Clean Preview toggles between the source and cleaned background, while Restore Original clears the current page's cleaned result.
+
+To use IOPaint, start a local service such as:
+
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-macOS / Linux:
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-3) Install dependencies
-
-```bash
-pip install -U pip
-pip install -r requirements.txt
-```
-
-If you hit `paddlepaddle` install errors, install PaddlePaddle first using the official instructions, then retry:
-- PaddlePaddle install guide: https://www.paddlepaddle.org.cn/install/quick
-
-## Run
-
-```bash
-python main.py
-```
-
-On the first OCR run, PaddleOCR/PaddleX may download models. By default the cache goes to `model/official_models/` (configurable in the app).
-
-## Usage (Step-by-step)
-
-### 1) Import images / PDFs
-
-- Images: click `导入图片` (or press `Ctrl+O`)
-- PDFs: click `导入PDF` (or press `Ctrl+Shift+O`)
-  - Each PDF page will be rendered into an image and added as a slide thumbnail.
-
-### 2) (Optional) Select ROI (only OCR/Inpaint within a region)
-
-- Click `框选选区` (or press `Ctrl+Alt+A`)
-- Drag on the canvas to select a rectangle
-- Click `清除选区` (or press `Ctrl+Alt+Shift+A`) to reset
-
-### 3) Run OCR
-
-- Current slide: `OCR本页` (`Ctrl+Enter`)
-- All slides: `OCR全部` (`Ctrl+R`)
-
-You can edit OCR results after recognition:
-- Drag to move boxes; drag handles to resize
-- Double-click a box to edit its text
-- Hold `Ctrl` and click boxes to multi-select; `Delete` removes all selected boxes
-- `Ctrl+C / Ctrl+X / Ctrl+V` copy/cut/paste boxes
-- `格式刷` copies style from one box and applies to the next clicked box
-
-### 4) (Recommended) Remove background text with IOPaint (avoid "double text")
-
-Why: scanned images already contain the original text; exporting OCR boxes on top can look like duplicated text.
-
-1) Start IOPaint service (example):
-```bash
 iopaint start --host 127.0.0.1 --port 8080
 ```
 
-2) In the app: `设置` tab -> `IOPaint 设置`
-- Enable IOPaint
-- Set API URL (default): `http://127.0.0.1:8080/api/v1/inpaint`
-- Adjust paddings if needed
+Then enable it under Settings → Clean Settings. The safe example endpoint is `http://127.0.0.1:8080/api/v1/inpaint`.
 
-3) Run inpaint:
-- Current slide: `去字本页` (`Ctrl+I`)
-- All slides: `去字全部` (`Ctrl+Shift+I`)
+### 5. Preview and export
 
-Tips:
-- `去字预览` toggles original / inpainted background for comparison (`Ctrl+Alt+B`)
-- `恢复原图` removes the inpainted variant for the current slide (`Ctrl+Alt+Shift+B`)
-
-### 5) Export / Preview PPT
-
-- Export: `导出PPT` (`Ctrl+S`)
-- Preview: `预览PPT` (`F5`)
-
-Export behavior:
-- If an inpainted variant exists for a slide, export will prefer it as the background.
-- Text boxes remain editable in PowerPoint.
-
-### 6) Export appearance settings (View tab)
-
-In `视图` tab -> `PPT导出设置`:
-- Enable/disable text box background
-- Pick global background color / alpha
-- Use eyedropper to pick a color from the current image
-- Per-box background: select a box, then adjust its custom background in the right panel
+- Press `F5` or click Preview PPT.
+- Press `Ctrl+S` or click Export PPT to save a `.pptx` file.
+- A cleaned page background is preferred when one is available.
+- OCR text is exported as independent PowerPoint text boxes and remains editable.
 
 ## Keyboard shortcuts
 
-Inside the app, press `F1` to open the shortcut cheat-sheet.
+Press `F1` in the application to open the complete shortcut reference.
 
-## Configuration
+| Action | Shortcut |
+| --- | --- |
+| Import image / PDF | `Ctrl+O` / `Ctrl+Shift+O` |
+| OCR current / all | `Ctrl+Enter` / `Ctrl+R` |
+| Smart Clean current / all | `Ctrl+I` / `Ctrl+Shift+I` |
+| Export / preview PPT | `Ctrl+S` / `F5` |
+| New / duplicate slide | `Ctrl+N` / `Ctrl+D` |
+| Move slide up / down | `Alt+Up` / `Alt+Down` |
+| Previous / next slide | `PageUp` / `PageDown` |
+| Add or remove a box from selection | `Ctrl+Click` |
+| Delete all selected boxes | `Delete` |
+| Undo / redo | `Ctrl+Z` / `Ctrl+Y` |
+| Paste image | `Ctrl+Shift+V` |
+| Fit to window | `Ctrl+0` |
+| Zoom in / out | `Ctrl++` / `Ctrl+-` |
+| Toggle thumbnails | `Ctrl+Alt+L` |
+| Toggle properties panel | `Ctrl+Alt+R` |
+| Shortcut help | `F1` |
 
-Settings are stored in `settings.json` (created/updated by the app). This file is intentionally excluded from Git because it may contain local paths or private service endpoints. Copy `settings.example.json` when you need a safe template; the example only references localhost.
+The canvas also supports `Ctrl+Wheel` for zoom and middle-button dragging for panning.
 
-### OCR model cache
+## Advanced: manual console launch
 
-In `设置` tab -> `OCR 设置`:
-- `模型缓存目录 (PADDLE_PDX_CACHE_HOME)`: where PaddleOCR/PaddleX downloads models (`official_models/` will be created under it)
-- Optional: set custom `det/rec` model directories
-- Enable GPU (auto fallback if GPU is not available)
+The one-click launcher covers normal use. For development or troubleshooting only, you can create a separate environment and launch manually:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
+
+This manual `.venv` is separate from the launcher's `.venv-launcher` environment.
+
+## Configuration and privacy
+
+- Runtime configuration is stored locally in `settings.json`.
+- Because it may contain local paths or private service endpoints, `settings.json` is excluded by `.gitignore`.
+- Copy `settings.example.json` when you need a safe template; it contains localhost endpoints only.
+- Virtual environments, logs, model caches, AI/cleaning caches, generated PDF/PPT files, and archives are excluded from Git.
+- Review your own screenshots, sample documents, and new configuration before publishing changes.
 
 ## Troubleshooting
 
-- `No module named qtawesome`: run `pip install qtawesome`
-- OCR init fails / model download fails:
-  - Check network access (first run needs to download models)
-  - Change model cache dir in `OCR 设置` to a writable folder
-  - For GPU: confirm the correct PaddlePaddle GPU wheel + CUDA runtime
-- PDF import fails:
-  - Ensure `PyMuPDF` is installed (`pip install pymupdf`)
-- IOPaint fails:
-  - Make sure the IOPaint service is running
-  - Verify API URL in `IOPaint 设置` (default: `http://127.0.0.1:8080/api/v1/inpaint`)
+### Double-clicking the launcher does not open a window
+
+1. Inspect `logs/launcher.log`.
+2. Run `安装或修复依赖.bat` again.
+3. Confirm that `py -3.13` works.
+4. If security software blocked the scripts, allow the project's BAT, PowerShell, and `pythonw.exe` processes.
+
+### The first OCR run is slow
+
+The first run may download and initialize OCR models. Keep the network available and make sure the model cache directory is writable.
+
+### PDF import fails
+
+Run the dependency repair script and confirm that PyMuPDF was installed successfully.
+
+### GPU mode is unavailable
+
+The application attempts to fall back to CPU. If GPU mode is required, verify that the PaddlePaddle GPU wheel, CUDA, and graphics driver versions match.
+
+### IOPaint cleaning fails
+
+Make sure the local IOPaint service is running and check the endpoint under Settings → Clean Settings. Smart Clean and Solid Fill do not require IOPaint for simple solid-color regions.
 
 ## Project structure
 
-- `main.py`: GUI + workflow (import/OCR/edit/export)
-- `ocr_engine.py`: PaddleOCR wrapper (2.x/3.x compatible)
-- `ppt_export.py`: PPTX generation with editable text boxes
+```text
+OCRPDF-TO-PPT/
+├─ 一键启动 OCRPDF-TO-PPT.bat   # Daily launch entry point
+├─ 安装或修复依赖.bat           # First-time setup and repair
+├─ scripts/
+│  ├─ start.ps1                 # Preflight and console-free launch
+│  ├─ setup.ps1                 # Python 3.13 environment setup
+│  └─ preflight.py              # Dependency validation
+├─ launcher.pyw                 # Windows GUI launcher
+├─ main.py                      # Ribbon UI and main workflow
+├─ ocr_engine.py                # PaddleOCR 2.x/3.x compatibility
+├─ ppt_export.py                # Editable PPTX export
+├─ settings.example.json        # Safe local configuration example
+├─ docs/images/                 # Current interface screenshots
+└─ tests/                       # Core automated tests
+```
 
-## Credits
+## Development validation
+
+After installing dependencies:
+
+```powershell
+.\.venv-launcher\Scripts\python.exe scripts\preflight.py
+.\.venv-launcher\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+## Source and license status
+
+This project is based on [Tansuo2021/OCRPDF-TO-PPT](https://github.com/Tansuo2021/OCRPDF-TO-PPT). See [NOTICE.md](NOTICE.md) for attribution and license status.
+
+The upstream repository did not include an explicit license when this private repository was prepared. Keep this repository private, and do not redistribute the code until permission or license terms are confirmed.
+
+## Acknowledgements
 
 - PaddleOCR / PaddlePaddle
 - PySide6 (Qt)
 - python-pptx
-- PyMuPDF (PDF import)
-- IOPaint (optional inpaint backend)
-- QtAwesome (icons)
-
-## Source and license status
-
-This project is based on [Tansuo2021/OCRPDF-TO-PPT](https://github.com/Tansuo2021/OCRPDF-TO-PPT). See [NOTICE.md](NOTICE.md) for attribution and license status. The upstream repository did not include an explicit license when this private repository was prepared, so do not make the repository public or redistribute the code until permission or license terms are confirmed.
+- PyMuPDF
+- IOPaint (optional cleaning backend)
+- QtAwesome

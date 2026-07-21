@@ -70,17 +70,22 @@ cd OCRPDF-TO-PPT
 
 也可以从 GitHub 下载 ZIP 后解压。
 
-### 2. 首次安装或修复依赖
-
-双击 `安装或修复依赖.bat`。脚本会自动检查 Python 3.13，创建或修复 `.venv-launcher`，安装依赖并验证关键模块。
-
-### 3. 日常一键启动
+### 2. 一键启动
 
 双击 `一键启动 OCRPDF-TO-PPT.bat`。
 
-启动器会先做依赖预检，再通过 `pythonw.exe` 打开图形界面，因此**不需要在控制台中运行 `python main.py`**。若启动失败，可查看 `logs/launcher.log`，或重新运行“安装或修复依赖”。
+启动器会先检查项目内的 `.venv-launcher`。在新设备、全新解压目录或依赖损坏时，它会自动寻找 Python 3.13，并依据 `requirements.txt` 创建或修复项目专用环境；检查通过后再使用该环境中的 `pythonw.exe` 打开图形界面。因此**不需要在控制台中运行 `python main.py`**。
+
+如果自动准备失败，可双击 `安装或修复依赖.bat` 查看完整安装过程。常见原因是尚未安装 Python 3.13、网络无法下载依赖，或磁盘空间不足。
 
 首次执行 OCR 时，PaddleOCR/PaddleX 可能下载模型。模型保存在本地缓存目录，不会上传到 GitHub。
+
+### 跨设备运行原理
+
+- BAT 和 PowerShell 脚本都从自身位置计算项目根目录，不绑定原电脑的盘符、用户名或绝对路径；带空格或中文的目录也可使用。
+- `.venv-launcher` 始终创建在当前项目目录内，启动时明确设置 `VIRTUAL_ENV` 并禁用系统用户级 Python 包。
+- 安装脚本可从 Python Launcher、用户安装目录、系统安装目录或 `PATH` 中查找正确的 Python 3.13。
+- 虚拟环境本身不会上传 GitHub，也不应从另一台电脑直接复制；每台设备会使用相同的 `requirements.txt` 在本地重建，避免旧路径和二进制不兼容。
 
 ## 使用流程
 
@@ -217,7 +222,7 @@ OCRPDF-TO-PPT/
 ├─ 一键启动 OCRPDF-TO-PPT.bat   # 日常启动入口
 ├─ 安装或修复依赖.bat           # 首次安装与环境修复
 ├─ scripts/
-│  ├─ start.ps1                 # 依赖预检与无控制台启动
+│  ├─ start.ps1                 # 自动修复、依赖预检与无控制台启动
 │  ├─ setup.ps1                 # Python 3.13 环境安装/修复
 │  └─ preflight.py              # 启动前依赖检查
 ├─ launcher.pyw                 # Windows 图形启动器

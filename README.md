@@ -70,17 +70,22 @@ cd OCRPDF-TO-PPT
 
 You can also download and extract the repository ZIP.
 
-### 2. Install or repair dependencies
-
-For the first run, double-click `安装或修复依赖.bat`. It checks Python 3.13, creates or repairs `.venv-launcher`, installs the dependencies, and validates the key imports.
-
-### 3. Start the application
+### 2. Start the application
 
 Double-click `一键启动 OCRPDF-TO-PPT.bat`.
 
-The launcher runs a dependency preflight and opens the GUI through `pythonw.exe`. You therefore **do not need to run `python main.py` in a console**. If startup fails, inspect `logs/launcher.log` or run the dependency repair script again.
+The launcher first checks the project-local `.venv-launcher`. On a new device, in a freshly extracted directory, or after dependency damage, it automatically finds Python 3.13 and creates or repairs the environment from `requirements.txt`. It then opens the GUI with that environment's `pythonw.exe`. You therefore **do not need to run `python main.py` in a console**.
+
+If automatic setup fails, double-click `安装或修复依赖.bat` to see the complete installation output. Typical causes are a missing Python 3.13 installation, unavailable dependency downloads, or insufficient disk space.
 
 PaddleOCR/PaddleX may download models the first time OCR is used. Models remain in the local cache and are not uploaded to GitHub.
+
+### How cross-device startup works
+
+- The BAT and PowerShell scripts derive the project root from their own location. They do not depend on the original drive, Windows user name, or an absolute checkout path, and paths containing spaces or Chinese characters are supported.
+- `.venv-launcher` is always created inside the current project. Startup explicitly sets `VIRTUAL_ENV` and disables user-level Python packages.
+- The setup script can find Python 3.13 through the Python Launcher, per-user and system-wide install locations, or `PATH`.
+- The virtual environment is not uploaded to GitHub and should not be copied from another computer. Each device rebuilds it locally from the same `requirements.txt`, avoiding stale paths and incompatible binaries.
 
 ## Workflow
 
@@ -217,7 +222,7 @@ OCRPDF-TO-PPT/
 ├─ 一键启动 OCRPDF-TO-PPT.bat   # Daily launch entry point
 ├─ 安装或修复依赖.bat           # First-time setup and repair
 ├─ scripts/
-│  ├─ start.ps1                 # Preflight and console-free launch
+│  ├─ start.ps1                 # Auto-repair, preflight, and console-free launch
 │  ├─ setup.ps1                 # Python 3.13 environment setup
 │  └─ preflight.py              # Dependency validation
 ├─ launcher.pyw                 # Windows GUI launcher

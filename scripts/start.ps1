@@ -1,3 +1,7 @@
+param(
+    [switch]$PreflightOnly
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -5,6 +9,7 @@ $python = Join-Path $projectRoot ".venv-launcher\Scripts\python.exe"
 $pythonw = Join-Path $projectRoot ".venv-launcher\Scripts\pythonw.exe"
 $launcher = Join-Path $projectRoot "launcher.pyw"
 $preflightScript = Join-Path $PSScriptRoot "preflight.py"
+$setupScript = Join-Path $PSScriptRoot "setup.ps1"
 $appIcon = Join-Path $projectRoot "assets\powerocr-icon.ico"
 
 # Keep the existing desktop launcher in sync with the application's icon.
@@ -39,36 +44,76 @@ function Show-LaunchError([string]$message) {
     }
 }
 
-if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath $pythonw)) {
-    Show-LaunchError "The launch environment is missing. Run the dependency repair BAT file in the project folder first."
-    exit 1
-}
-
-if (-not (Test-Path -LiteralPath $launcher) -or -not (Test-Path -LiteralPath $preflightScript)) {
+if (-not (Test-Path -LiteralPath $launcher) -or -not (Test-Path -LiteralPath $preflightScript) -or -not (Test-Path -LiteralPath $setupScript)) {
     Show-LaunchError "One or more launcher files are missing. Please restore the project files."
     exit 1
 }
 
-$startInfo = New-Object System.Diagnostics.ProcessStartInfo
-$startInfo.FileName = $python
-$startInfo.Arguments = ('"{0}"' -f $preflightScript)
-$startInfo.WorkingDirectory = $projectRoot
-$startInfo.UseShellExecute = $false
-$startInfo.CreateNoWindow = $true
-$startInfo.RedirectStandardOutput = $true
-$startInfo.RedirectStandardError = $true
+function Invoke-EnvironmentSetup {
+    try {
+        Write-Host "Preparing the project-local Python environment ..." -ForegroundColor Cyan
+        & $setupScript | Out-Host
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        return $false
+    }
+}
 
-$checkProcess = New-Object System.Diagnostics.Process
-$checkProcess.StartInfo = $startInfo
-[void]$checkProcess.Start()
-$checkStdout = $checkProcess.StandardOutput.ReadToEnd()
-$checkStderr = $checkProcess.StandardError.ReadToEnd()
-$checkProcess.WaitForExit()
+function Invoke-Preflight {
+    if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath $pythonw)) {
+        return [pscustomobject]@{ Success = $false; Output = "The project-local virtual environment is missing." }
+    }
 
-if ($checkProcess.ExitCode -ne 0) {
-    $checkOutput = ($checkStdout + "`n" + $checkStderr).Trim()
-    Show-LaunchError ("Environment check failed:`n" + $checkOutput + "`n`nRun the dependency repair BAT file, then try again.")
-    exit 1
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $python
+    $startInfo.Arguments = ('"{0}"' -f $preflightScript)
+    $startInfo.WorkingDirectory = $projectRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    try {
+        $checkProcess = New-Object System.Diagnostics.Process
+        $checkProcess.StartInfo = $startInfo
+        [void]$checkProcess.Start()
+        $checkStdout = $checkProcess.StandardOutput.ReadToEnd()
+        $checkStderr = $checkProcess.StandardError.ReadToEnd()
+        $checkProcess.WaitForExit()
+        return [pscustomobject]@{
+            Success = ($checkProcess.ExitCode -eq 0)
+            Output = ($checkStdout + "`n" + $checkStderr).Trim()
+        }
+    }
+    catch {
+        return [pscustomobject]@{ Success = $false; Output = $_.Exception.Message }
+    }
+}
+
+$env:VIRTUAL_ENV = Join-Path $projectRoot ".venv-launcher"
+$env:PYTHONNOUSERSITE = "1"
+
+$check = Invoke-Preflight
+if (-not $check.Success) {
+    Write-Host "Environment check failed: $($check.Output)" -ForegroundColor Yellow
+    if (-not (Invoke-EnvironmentSetup)) {
+        Show-LaunchError "The project-local environment could not be prepared. Install Python 3.13 or run the dependency repair BAT file and review the displayed error."
+        exit 1
+    }
+    $check = Invoke-Preflight
+    if (-not $check.Success) {
+        Show-LaunchError ("Environment check still fails after repair:`n" + $check.Output)
+        exit 1
+    }
+}
+
+$env:Path = ((Join-Path $env:VIRTUAL_ENV "Scripts") + ";" + $env:Path)
+
+if ($PreflightOnly) {
+    Write-Host "Environment preflight succeeded: $projectRoot" -ForegroundColor Green
+    exit 0
 }
 
 Start-Process -FilePath $pythonw `

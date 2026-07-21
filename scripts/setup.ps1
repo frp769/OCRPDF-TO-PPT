@@ -3,29 +3,95 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $venvDir = Join-Path $projectRoot ".venv-launcher"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
+$venvPythonw = Join-Path $venvDir "Scripts\pythonw.exe"
 $requirements = Join-Path $projectRoot "requirements.txt"
-$python313 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe"
+$env:PYTHONNOUSERSITE = "1"
+
+function Test-Python313([string]$executable, [string[]]$prefixArguments = @()) {
+    if ([string]::IsNullOrWhiteSpace($executable)) {
+        return $null
+    }
+
+    try {
+        $probe = & $executable @prefixArguments -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}|{sys.executable}')" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($probe)) {
+            return $null
+        }
+        $parts = ([string]$probe).Trim().Split('|', 2)
+        if ($parts.Count -eq 2 -and $parts[0] -eq "3.13" -and (Test-Path -LiteralPath $parts[1])) {
+            return [System.IO.Path]::GetFullPath($parts[1])
+        }
+    }
+    catch {
+        return $null
+    }
+    return $null
+}
+
+function Find-Python313 {
+    $pyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
+    if ($null -ne $pyLauncher) {
+        $resolved = Test-Python313 $pyLauncher.Source @("-3.13")
+        if ($null -ne $resolved) { return $resolved }
+    }
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $candidates += Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $candidates += Join-Path $env:ProgramFiles "Python313\python.exe"
+    }
+    if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+        $candidates += Join-Path ${env:ProgramFiles(x86)} "Python313\python.exe"
+    }
+    foreach ($commandName in @("python3.13.exe", "python.exe")) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($null -ne $command) { $candidates += $command.Source }
+    }
+
+    foreach ($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $candidate)) { continue }
+        $resolved = Test-Python313 $candidate
+        if ($null -ne $resolved) { return $resolved }
+    }
+    return $null
+}
+
+function Test-ProjectVirtualEnvironment {
+    if (-not (Test-Path -LiteralPath $venvPython) -or -not (Test-Path -LiteralPath $venvPythonw)) {
+        return $false
+    }
+    try {
+        $probe = & $venvPython -c "import os, sys; print(f'{sys.version_info.major}.{sys.version_info.minor}|{os.path.normcase(os.path.realpath(sys.prefix))}')" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($probe)) { return $false }
+        $parts = ([string]$probe).Trim().Split('|', 2)
+        $expectedPrefix = [System.IO.Path]::GetFullPath($venvDir).TrimEnd('\')
+        return $parts.Count -eq 2 -and $parts[0] -eq "3.13" -and
+            $parts[1].TrimEnd('\').Equals($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    }
+    catch {
+        return $false
+    }
+}
 
 Write-Host "OCRPDF-TO-PPT environment setup" -ForegroundColor Cyan
 Write-Host "Project: $projectRoot"
 
-if (-not (Test-Path -LiteralPath $python313)) {
+if (-not (Test-Path -LiteralPath $requirements)) {
+    throw "requirements.txt is missing from the project directory."
+}
+
+$python313 = Find-Python313
+if ($null -eq $python313) {
     Write-Host "Python 3.13 was not found." -ForegroundColor Yellow
     Write-Host "Install it with:" -ForegroundColor Yellow
     Write-Host "  winget install --exact --id Python.Python.3.13 --scope user" -ForegroundColor White
-    exit 1
+    throw "Install Python 3.13, then run setup again."
 }
+Write-Host "Base Python: $python313"
 
-$recreate = $false
-if (Test-Path -LiteralPath $venvPython) {
-    $version = & $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-    if ($LASTEXITCODE -ne 0 -or $version -ne "3.13") {
-        $recreate = $true
-    }
-}
-elseif (Test-Path -LiteralPath $venvDir) {
-    $recreate = $true
-}
+$recreate = (Test-Path -LiteralPath $venvDir) -and -not (Test-ProjectVirtualEnvironment)
 
 if ($recreate) {
     $resolvedRoot = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\')
@@ -42,6 +108,9 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
     & $python313 -m venv $venvDir
     if ($LASTEXITCODE -ne 0) { throw "Failed to create the virtual environment." }
 }
+
+$env:VIRTUAL_ENV = $venvDir
+$env:Path = ((Join-Path $venvDir "Scripts") + ";" + $env:Path)
 
 Write-Host "Installing dependencies (the first run can take several minutes) ..."
 & $venvPython -m pip install --upgrade pip

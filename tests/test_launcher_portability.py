@@ -15,7 +15,11 @@ class LauncherPortabilityTests(unittest.TestCase):
         return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
 
     def test_batch_files_anchor_to_their_own_directory(self) -> None:
-        for filename in ("一键启动 OCRPDF-TO-PPT.bat", "安装或修复依赖.bat"):
+        for filename in (
+            "一键启动 OCRPDF-TO-PPT.bat",
+            "安装或修复依赖.bat",
+            "检查并修复程序.bat",
+        ):
             content = self._read(filename)
             self.assertIn('%~dp0', content, filename)
             self.assertIn('cd /d "%~dp0"', content, filename)
@@ -26,9 +30,15 @@ class LauncherPortabilityTests(unittest.TestCase):
         for filename, content in (("start.ps1", start), ("setup.ps1", setup)):
             self.assertIn("$PSScriptRoot", content, filename)
             self.assertIn('.venv-launcher', content, filename)
+            self.assertIn('.runtime\\python313', content, filename)
             self.assertIn('PYTHONNOUSERSITE', content, filename)
-        self.assertIn('requirements.txt', setup)
-        self.assertIn('Find-Python313', setup)
+        self.assertIn('requirements-lock-win10.txt', setup)
+        self.assertIn('3.13.14', setup)
+        self.assertIn('Get-FileHash', setup)
+        self.assertIn('pythonPackageSha256', setup)
+        self.assertIn('Expand-Archive', setup)
+        self.assertIn('ForceDependencies', setup)
+        self.assertNotIn('Find-Python313', setup)
         self.assertIn('Invoke-EnvironmentSetup', start)
         self.assertIn('PreflightOnly', start)
 
@@ -36,6 +46,7 @@ class LauncherPortabilityTests(unittest.TestCase):
         paths = (
             "一键启动 OCRPDF-TO-PPT.bat",
             "安装或修复依赖.bat",
+            "检查并修复程序.bat",
             "launcher.pyw",
             "scripts/start.ps1",
             "scripts/setup.ps1",

@@ -2,7 +2,6 @@ import sys
 import os
 import tempfile
 import copy
-import json
 import re
 import shutil
 import platform
@@ -23,11 +22,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QPointF, QPoint, QUrl, QLocale
 from PySide6.QtGui import (
-    QPixmap, QPen, QColor, QFont, QFontMetricsF, QTextOption, QImage, QIcon, QBrush, QAction, QKeySequence, QDesktopServices
+    QPixmap, QPen, QColor, QFont, QFontMetricsF, QTextOption, QImage, QImageReader,
+    QIcon, QBrush, QAction, QKeySequence, QDesktopServices
 )
 import cv2
 import numpy as np
 from image_utils import build_asset_path, imread_any, imwrite_any
+from persistence import atomic_write_json, load_json_with_backup
 
 logger = logging.getLogger(__name__)
 
@@ -151,19 +152,12 @@ def parse_inpaint_api_urls(value):
     - multiple URLs separated by newlines/semicolon/comma
     - a list/tuple of URLs
     """
-    if isinstance(value, (list, tuple)):
-        out = []
-        for v in value:
-            s = str(v or "").strip()
-            if s:
-                out.append(s)
-        return out
-
-    s = str(value or "").strip()
-    if not s:
-        return []
-
-    parts = [p.strip() for p in re.split(r"[;\n,]+", s) if p.strip()]
+    values = value if isinstance(value, (list, tuple)) else (value,)
+    parts = []
+    for item in values:
+        text = str(item or "").strip()
+        if text:
+            parts.extend(p.strip() for p in re.split(r"[;\n,]+", text) if p.strip())
 
     # De-dup while preserving order.
     seen = set()
@@ -175,6 +169,34 @@ def parse_inpaint_api_urls(value):
         seen.add(key)
         out.append(key)
     return out
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+PDF_EXTENSIONS = {".pdf"}
+
+
+def classify_import_paths(paths):
+    """Classify dropped/imported paths while removing duplicates."""
+
+    images, pdfs, unsupported = [], [], []
+    seen = set()
+    for raw_path in paths or []:
+        try:
+            path = os.path.abspath(os.fspath(raw_path))
+        except (TypeError, ValueError):
+            continue
+        key = os.path.normcase(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        extension = os.path.splitext(path)[1].lower()
+        if extension in IMAGE_EXTENSIONS:
+            images.append(path)
+        elif extension in PDF_EXTENSIONS:
+            pdfs.append(path)
+        else:
+            unsupported.append(path)
+    return images, pdfs, unsupported
 
 def _t_sys(zh: str, en: str = None) -> str:
     """Translate by system locale (used before app settings/UI language are loaded)."""
@@ -207,6 +229,20 @@ try:
 except ImportError:
     _missing_qtawesome = True
 
+
+def _safe_qta_icon(name, color="#444"):
+    """Return an icon without letting optional font installation block startup."""
+
+    global _missing_qtawesome
+    if _missing_qtawesome:
+        return QIcon()
+    try:
+        return qta.icon(name, color=color)
+    except Exception as exc:
+        logger.warning("QtAwesome icon unavailable (%s): %s", name, exc)
+        _missing_qtawesome = True
+        return QIcon()
+
 # 注意：QApplication 必须在主入口处创建，不能在依赖检查时创建
 # 否则会导致后续的 QApplication 实例无法正常使用
 
@@ -214,19 +250,10 @@ except ImportError:
 # 注意：为了让 PaddleX 缓存目录生效（PADDLE_PDX_CACHE_HOME），OCR 引擎必须在设置环境变量后再 import 初始化。
 try:
     from ppt_export import PPTExporter
-except ImportError:
-    class PPTExporter:
-        @classmethod
-        def _scale_to_ppt_limit(cls, img_width, img_height):
-            return int(img_width or 1), int(img_height or 1), 1.0
-
-        @classmethod
-        def presentation_size_for_images(cls, image_paths):
-            return 1, 1
-
-        def __init__(self, **kwargs): pass
-        def add_image_with_text_boxes(self, *args): pass
-        def save(self, path): return True
+except ImportError as exc:
+    raise RuntimeError(
+        "PPT export dependencies are unavailable. Run the dependency repair BAT file."
+    ) from exc
 
 OCREngine = None  # 延迟 import（见 ensure_ocr_engine）
 
@@ -2359,7 +2386,7 @@ class RibbonLargeBtn(QToolButton):
     def __init__(self, text, icon_name, color="#444"):
         super().__init__()
         self.setText(text)
-        self.setIcon(qta.icon(icon_name, color=color))
+        self.setIcon(_safe_qta_icon(icon_name, color=color))
         self.setIconSize(QSize(24, 24)) 
         self.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         # Avoid a fixed width: labels such as "English" otherwise get clipped.
@@ -2371,7 +2398,7 @@ class RibbonSmallBtn(QToolButton):
     def __init__(self, text, icon_name):
         super().__init__()
         self.setText(text)
-        self.setIcon(qta.icon(icon_name, color="#444"))
+        self.setIcon(_safe_qta_icon(icon_name, color="#444"))
         self.setIconSize(QSize(14, 14))
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.setMinimumHeight(28)
@@ -3022,6 +3049,7 @@ class PPTCloneApp(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
         self.resize(1200, 760)
         self.setStyleSheet(GLOBAL_STYLE)
+        self.setAcceptDrops(True)
 
         self.settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
         self.settings = self.load_settings()
@@ -3267,23 +3295,22 @@ class PPTCloneApp(QMainWindow):
             "inpaint_remote_pad_y": 4,
         }
         try:
-            if os.path.exists(self.settings_path):
-                with open(self.settings_path, "r", encoding="utf-8") as f:
-                    data = json.load(f) or {}
-                # 兼容旧 key：ocr_model_cache_dir
-                if "ocr_paddlex_home" not in data and "ocr_model_cache_dir" in data:
-                    data["ocr_paddlex_home"] = data.get("ocr_model_cache_dir", "")
-                defaults.update({k: data.get(k, v) for k, v in defaults.items()})
-        except Exception:
-            pass
+            data, recovered = load_json_with_backup(self.settings_path)
+            if recovered:
+                logger.warning("settings.json was invalid; recovered settings from settings.json.bak")
+            # 兼容旧 key：ocr_model_cache_dir
+            if "ocr_paddlex_home" not in data and "ocr_model_cache_dir" in data:
+                data["ocr_paddlex_home"] = data.get("ocr_model_cache_dir", "")
+            defaults.update({k: data.get(k, v) for k, v in defaults.items()})
+        except Exception as exc:
+            logger.warning("加载设置失败，已使用安全默认值: %s", exc)
         return defaults
 
     def save_settings(self):
         try:
-            with open(self.settings_path, "w", encoding="utf-8") as f:
-                json.dump(self.settings, f, ensure_ascii=False, indent=2)
+            atomic_write_json(self.settings_path, self.settings)
         except Exception as e:
-            logger.warning(f"保存设置失败: {e}")
+            logger.warning("保存设置失败: %s", e)
 
     def _apply_ocr_env(self):
         # Work around a PaddlePaddle OneDNN + PIR limitation that can raise:
@@ -4136,9 +4163,9 @@ class PPTCloneApp(QMainWindow):
             btn_gh = QToolButton()
             btn_gh.setAutoRaise(True)
             try:
-                btn_gh.setIcon(qta.icon("fa5b.github", color=PPT_THEME_RED))
+                btn_gh.setIcon(_safe_qta_icon("fa5b.github", color=PPT_THEME_RED))
             except Exception:
-                btn_gh.setIcon(qta.icon("fa5s.code-branch", color=PPT_THEME_RED))
+                btn_gh.setIcon(_safe_qta_icon("fa5s.code-branch", color=PPT_THEME_RED))
             btn_gh.setIconSize(QSize(18, 18))
             btn_gh.setToolTip(url)
             btn_gh.clicked.connect(self.open_github_repo)
@@ -4395,7 +4422,7 @@ class PPTCloneApp(QMainWindow):
         self.update_color_preview()
 
         btn_color_picker = QPushButton(self._t("颜色", "Color"))
-        btn_color_picker.setIcon(qta.icon("fa5s.palette", color="#666"))
+        btn_color_picker.setIcon(_safe_qta_icon("fa5s.palette", color="#666"))
         btn_color_picker.setFixedHeight(20)
         btn_color_picker.setStyleSheet("""
             QPushButton { padding: 1px 6px; background: white; border: 1px solid #CCC; border-radius: 3px; font-size: 11px; }
@@ -4405,7 +4432,7 @@ class PPTCloneApp(QMainWindow):
         row2_l.addWidget(btn_color_picker)
 
         self.btn_eyedropper = QPushButton(self._t("吸管", "Pick"))
-        self.btn_eyedropper.setIcon(qta.icon("fa5s.eye-dropper", color="#666"))
+        self.btn_eyedropper.setIcon(_safe_qta_icon("fa5s.eye-dropper", color="#666"))
         self.btn_eyedropper.setFixedHeight(20)
         self.btn_eyedropper.setStyleSheet("""
             QPushButton { padding: 1px 6px; background: white; border: 1px solid #CCC; border-radius: 3px; font-size: 11px; }
@@ -4620,26 +4647,26 @@ class PPTCloneApp(QMainWindow):
         
         # Bottom quick buttons: bind to the same actions/shortcuts.
         btn_help = QPushButton()
-        btn_help.setIcon(qta.icon("fa5s.keyboard", color="white"))
+        btn_help.setIcon(_safe_qta_icon("fa5s.keyboard", color="white"))
         btn_help.setToolTip(self._t("快捷键 (F1)", "Shortcuts (F1)"))
         btn_help.clicked.connect(self.show_shortcuts)
         sb_layout.addWidget(btn_help)
 
         btn_toggle_left = QPushButton()
-        btn_toggle_left.setIcon(qta.icon("fa5s.th-large", color="white"))
+        btn_toggle_left.setIcon(_safe_qta_icon("fa5s.th-large", color="white"))
         btn_toggle_left.setToolTip(self._t("显示/隐藏缩略图 (Ctrl+Alt+L)", "Toggle thumbnails (Ctrl+Alt+L)"))
         btn_toggle_left.clicked.connect(self.toggle_left_panel)
         sb_layout.addWidget(btn_toggle_left)
 
         btn_preview = QPushButton()
         # “电脑/显示器”图标：预览PPT
-        btn_preview.setIcon(qta.icon("fa5s.tv", color="white"))
+        btn_preview.setIcon(_safe_qta_icon("fa5s.tv", color="white"))
         btn_preview.setToolTip(self._t("预览PPT (F5)", "Preview PPT (F5)"))
         btn_preview.clicked.connect(self.preview_ppt)
         sb_layout.addWidget(btn_preview)
         
         btn_fit = QPushButton()
-        btn_fit.setIcon(qta.icon("fa5s.expand-arrows-alt", color="white"))
+        btn_fit.setIcon(_safe_qta_icon("fa5s.expand-arrows-alt", color="white"))
         btn_fit.setToolTip(self._t("适应窗口 (Ctrl+0)", "Fit to window (Ctrl+0)"))
         btn_fit.clicked.connect(self.fit_view_to_window)
         sb_layout.addWidget(btn_fit)
@@ -4733,7 +4760,7 @@ class PPTCloneApp(QMainWindow):
         self.text_color_preview.setStyleSheet("background: black; border: 1px solid #ccc;")
         ts.addWidget(self.text_color_preview, 0, 0, 1, 1)
         self.btn_text_color = QPushButton(self._t("文字颜色", "Text color"))
-        self.btn_text_color.setIcon(qta.icon("fa5s.font", color="#666"))
+        self.btn_text_color.setIcon(_safe_qta_icon("fa5s.font", color="#666"))
         self.btn_text_color.clicked.connect(self.choose_text_color)
         self.btn_text_color.setEnabled(False)
         self.btn_text_color.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -4781,14 +4808,14 @@ class PPTCloneApp(QMainWindow):
         bg_layout.addWidget(self.custom_color_preview, 0, 1, 1, 1)
 
         self.btn_choose_custom_color = QPushButton(self._t("选择", "Choose"))
-        self.btn_choose_custom_color.setIcon(qta.icon("fa5s.palette", color="#666"))
+        self.btn_choose_custom_color.setIcon(_safe_qta_icon("fa5s.palette", color="#666"))
         self.btn_choose_custom_color.clicked.connect(self.choose_custom_color)
         self.btn_choose_custom_color.setEnabled(False)
         self.btn_choose_custom_color.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         bg_layout.addWidget(self.btn_choose_custom_color, 1, 0, 1, 1)
 
         self.btn_pick_custom_color = QPushButton(self._t("吸管", "Pick"))
-        self.btn_pick_custom_color.setIcon(qta.icon("fa5s.eye-dropper", color="#666"))
+        self.btn_pick_custom_color.setIcon(_safe_qta_icon("fa5s.eye-dropper", color="#666"))
         self.btn_pick_custom_color.setCheckable(True)
         self.btn_pick_custom_color.setStyleSheet("""
             QPushButton { padding: 4px 10px; background: white; border: 1px solid #CCC; border-radius: 3px; }
@@ -4848,7 +4875,7 @@ class PPTCloneApp(QMainWindow):
 
         l.addStretch()
         btn_del = QPushButton(self._t("删除选中框（支持 Ctrl 多选）", "Delete selected boxes (Ctrl multi-select)"))
-        btn_del.setIcon(qta.icon("fa5s.trash-alt", color="#D24726"))
+        btn_del.setIcon(_safe_qta_icon("fa5s.trash-alt", color="#D24726"))
         btn_del.setStyleSheet("QPushButton { border: 1px solid #D24726; color: #D24726; padding: 6px; background: white; border-radius: 4px; } QPushButton:hover { background: #FFF3F0; }")
         btn_del.clicked.connect(self.delete_box)
         l.addWidget(btn_del)
@@ -4922,17 +4949,42 @@ class PPTCloneApp(QMainWindow):
             "",
             "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)",
         )
-        if not paths: return
-        for p in paths:
-            self._add_image_item(p)
+        if not paths:
+            return
+        self._import_image_paths(paths)
+
+    def _import_image_paths(self, paths):
+        imported = 0
+        skipped = []
+        for path in paths or []:
+            if not os.path.isfile(path) or not QImageReader(path).canRead():
+                skipped.append(path)
+                continue
+            self._add_image_item(path)
+            imported += 1
         self.update_status()
+        if skipped:
+            names = "\n".join(os.path.basename(path) for path in skipped[:10])
+            if len(skipped) > 10:
+                names += self._t("\n……还有更多文件", "\n...and more files")
+            QMessageBox.warning(
+                self,
+                self._t("部分文件未导入", "Some files were skipped"),
+                self._t(
+                    f"以下文件不是可读取的图片：\n{names}",
+                    f"The following files are not readable images:\n{names}",
+                ),
+            )
+        return imported
 
     def import_pdfs(self):
         """导入 PDF：把每一页渲染成图片后加入左侧缩略图列表，供 OCR 识别/导出"""
         paths, _ = QFileDialog.getOpenFileNames(None, self._t("导入PDF", "Import PDF"), "", "PDF (*.pdf)")
         if not paths:
             return
+        self._import_pdf_paths(paths)
 
+    def _import_pdf_paths(self, paths):
         try:
             import fitz  # PyMuPDF
         except Exception:
@@ -5019,6 +5071,39 @@ class PPTCloneApp(QMainWindow):
 
         # Keep behavior consistent with "导入图片" (no auto-select), just refresh status.
         self.update_status()
+        return imported
+
+    def dragEnterEvent(self, event):
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        paths = [url.toLocalFile() for url in urls if url.isLocalFile()]
+        images, pdfs, _ = classify_import_paths(paths)
+        if images or pdfs:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        paths = [url.toLocalFile() for url in urls if url.isLocalFile()]
+        images, pdfs, unsupported = classify_import_paths(paths)
+        if images:
+            self._import_image_paths(images)
+        if pdfs:
+            self._import_pdf_paths(pdfs)
+        if unsupported:
+            names = "\n".join(os.path.basename(path) for path in unsupported[:10])
+            QMessageBox.information(
+                self,
+                self._t("未支持的文件", "Unsupported files"),
+                self._t(
+                    f"仅支持图片和 PDF，已跳过：\n{names}",
+                    f"Only images and PDFs are supported. Skipped:\n{names}",
+                ),
+            )
+        if images or pdfs:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def _ensure_inpaint_ready(self) -> bool:
         if not bool(self.settings.get("inpaint_enabled", True)):

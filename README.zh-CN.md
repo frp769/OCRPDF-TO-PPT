@@ -12,11 +12,13 @@ OCRPDF-TO-PPT 是一款面向 Windows 的桌面工具，可将图片或 PDF 页�
 
 - Ribbon 风格界面：功能集中在“开始 / 视图 / 设置”三个选项卡中。
 - 多页编辑：支持导入图片与 PDF、新建空白页、复制页面、调整顺序和缩略图导航。
+- 拖放导入：可把图片和 PDF 混合拖入窗口，自动去重并提示不支持的文件。
 - OCR 与选区：可识别当前页或全部页面，也可框选 ROI 后只处理指定区域。
 - 可编辑文本框：支持移动、缩放、双击改字、字体大小、颜色、粗体、对齐、背景色和透明度。
 - **多选删除**：按住 `Ctrl` 依次点击多个文本框可增减选择，按 `Delete` 会一次删除所有已选文本框。
 - 三种去字方式：智能去字、纯色填充、IOPaint；均提供当前页与全部页面操作。
 - 可编辑 PPTX：导出的文本仍是 PowerPoint 文本框，可在 PowerPoint 中继续修改。
+- 防损坏保存：设置文件异常时可从备份恢复；PPT 导出失败时不会覆盖原有文件。
 - 一键启动：脚本自动使用项目专用环境并以无控制台方式启动 GUI。
 
 ## 当前界面
@@ -52,8 +54,8 @@ OCRPDF-TO-PPT 是一款面向 Windows 的桌面工具，可将图片或 PDF 页�
 
 ## 系统要求
 
-- Windows 10/11，64 位。
-- Python 3.13，项目自带的安装与启动脚本会检查此版本。
+- Windows 10 1809 或更高版本、Windows 11，Intel/AMD x86-64。
+- 无需预先安装 Python；修复脚本会下载并校验项目内 CPython 3.13.14。
 - 首次安装依赖和首次下载 OCR 模型时需要网络连接。
 - 建议预留数 GB 磁盘空间供 Python 环境和 OCR 模型使用。
 
@@ -74,18 +76,21 @@ cd OCRPDF-TO-PPT
 
 双击 `一键启动 OCRPDF-TO-PPT.bat`。
 
-启动器会先检查项目内的 `.venv-launcher`。在新设备、全新解压目录或依赖损坏时，它会自动寻找 Python 3.13，并依据 `requirements.txt` 创建或修复项目专用环境；检查通过后再使用该环境中的 `pythonw.exe` 打开图形界面。因此**不需要在控制台中运行 `python main.py`**。
+启动器会检查项目内的 `.runtime` 和 `.venv-launcher`。在新设备、全新解压目录或依赖损坏时，它会下载 Python 官方 CPython 3.13.14 x64 NuGet 运行时、核对固定 SHA-256 校验值，再依据 `requirements-lock-win10.txt` 创建或修复项目专用环境；检查通过后使用该环境中的 `pythonw.exe` 打开图形界面。因此**不需要安装系统 Python，也不需要在控制台中运行 `python main.py`**。
 
-如果自动准备失败，可双击 `安装或修复依赖.bat` 查看完整安装过程。常见原因是尚未安装 Python 3.13、网络无法下载依赖，或磁盘空间不足。
+如果自动准备失败，可双击 `安装或修复依赖.bat` 查看完整安装过程；如需强制重装并核验所有依赖，可双击 `检查并修复程序.bat`。常见原因是 NuGet/PyPI 被网络或代理阻断、安全软件拦截、项目目录只读，或磁盘空间不足。
 
 首次执行 OCR 时，PaddleOCR/PaddleX 可能下载模型。模型保存在本地缓存目录，不会上传到 GitHub。
 
 ### 跨设备运行原理
 
 - BAT 和 PowerShell 脚本都从自身位置计算项目根目录，不绑定原电脑的盘符、用户名或绝对路径；带空格或中文的目录也可使用。
+- 基础 Python 下载到 `.runtime\python313`，不依赖也不修改系统 Python。
 - `.venv-launcher` 始终创建在当前项目目录内，启动时明确设置 `VIRTUAL_ENV` 并禁用系统用户级 Python 包。
-- 安装脚本可从 Python Launcher、用户安装目录、系统安装目录或 `PATH` 中查找正确的 Python 3.13。
-- 虚拟环境本身不会上传 GitHub，也不应从另一台电脑直接复制；每台设备会使用相同的 `requirements.txt` 在本地重建，避免旧路径和二进制不兼容。
+- Windows 锁定依赖文件保证不同日期安装时使用相同版本，而不是临时获取最新版。
+- `.runtime`、`.venv-launcher` 和模型目录不会上传 GitHub，因此 Git 克隆会在每台电脑本地重建；如果直接完整复制已经准备好的项目文件夹，启动器会先修复移动后的虚拟环境路径再运行。
+
+完整支持范围、限制和不支持的平台见 [PORTABLE_COMPATIBILITY.md](PORTABLE_COMPATIBILITY.md)。
 
 ## 使用流程
 
@@ -93,6 +98,7 @@ cd OCRPDF-TO-PPT
 
 - 点击“导入图片”，或按 `Ctrl+O`。
 - 点击“导入 PDF”，或按 `Ctrl+Shift+O`。
+- 也可以把一个或多个图片/PDF 直接拖放到程序窗口。
 - PDF 会按页渲染为图片，并显示在左侧缩略图列表中。
 - 也可以新建空白页、复制当前页、删除页面或调整页面顺序。
 
@@ -185,6 +191,7 @@ py -3.13 -m venv .venv
 ## 配置与隐私
 
 - 程序运行配置保存在本地 `settings.json`。
+- 设置采用原子写入；上一份有效配置保留为 `settings.json.bak`，主文件损坏时自动恢复。
 - `settings.json` 可能包含本机路径或私有服务地址，因此已被 `.gitignore` 排除。
 - 可复制 `settings.example.json` 作为安全配置模板；示例只使用 localhost。
 - 虚拟环境、日志、模型缓存、AI/去字缓存、生成的 PDF/PPT 和压缩包均不会提交到 Git。
@@ -195,8 +202,8 @@ py -3.13 -m venv .venv
 ### 双击一键启动后没有出现窗口
 
 1. 查看 `logs/launcher.log`；
-2. 双击 `安装或修复依赖.bat`；
-3. 确认系统可以运行 `py -3.13`；
+2. 双击 `检查并修复程序.bat`；
+3. 确认当前网络能够访问 NuGet 和 PyPI；
 4. 若安全软件拦截脚本，请允许项目目录中的 BAT、PowerShell 和 `pythonw.exe`。
 
 ### OCR 首次启动较慢
@@ -221,6 +228,8 @@ py -3.13 -m venv .venv
 OCRPDF-TO-PPT/
 ├─ 一键启动 OCRPDF-TO-PPT.bat   # 日常启动入口
 ├─ 安装或修复依赖.bat           # 首次安装与环境修复
+├─ 检查并修复程序.bat           # 强制核验并重装锁定依赖
+├─ requirements-lock-win10.txt  # Windows 可复现依赖版本
 ├─ scripts/
 │  ├─ start.ps1                 # 自动修复、依赖预检与无控制台启动
 │  ├─ setup.ps1                 # Python 3.13 环境安装/修复
@@ -229,6 +238,7 @@ OCRPDF-TO-PPT/
 ├─ main.py                      # Ribbon 界面与主工作流
 ├─ ocr_engine.py                # PaddleOCR 2.x/3.x 兼容封装
 ├─ ppt_export.py                # 可编辑 PPTX 导出
+├─ persistence.py               # 设置原子写入和备份恢复
 ├─ settings.example.json        # 安全的本地配置示例
 ├─ docs/images/                 # 当前界面截图
 └─ tests/                       # 核心自动化测试

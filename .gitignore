@@ -3,6 +3,7 @@
 .codex/
 .venv/
 .venv-*/
+.runtime/
 .idea/
 .vscode/
 
@@ -15,6 +16,8 @@ htmlcov/
 
 # Runtime state and user-specific configuration
 settings.json
+settings.json.*
+.settings.json.*
 logs/
 *.log
 _runtime_cache/
@@ -36,4 +39,3 @@ READMEold.md
 build/
 dist/
 *.egg-info/
-

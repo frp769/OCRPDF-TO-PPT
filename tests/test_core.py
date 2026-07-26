@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -11,7 +12,8 @@ from PySide6.QtWidgets import QApplication
 from pptx import Presentation
 
 from image_utils import build_asset_path
-from main import PPTCloneApp, parse_inpaint_api_urls
+from main import PPTCloneApp, classify_import_paths, parse_inpaint_api_urls
+from persistence import atomic_write_json, load_json_with_backup
 from ppt_export import PPTExporter
 
 
@@ -24,7 +26,41 @@ class InpaintUrlTests(unittest.TestCase):
         )
 
     def test_parse_urls_accepts_sequence(self):
-        self.assertEqual(parse_inpaint_api_urls(["http://localhost/a", "", "http://localhost/b"]), ["http://localhost/a", "http://localhost/b"])
+        self.assertEqual(
+            parse_inpaint_api_urls(
+                [
+                    "http://localhost/a;http://localhost/b",
+                    "",
+                    "http://localhost/a",
+                ]
+            ),
+            ["http://localhost/a", "http://localhost/b"],
+        )
+
+
+class ImportClassificationTests(unittest.TestCase):
+    def test_mixed_paths_are_classified_and_deduplicated(self):
+        images, pdfs, unsupported = classify_import_paths(
+            ["scan.PNG", "deck.pdf", "scan.PNG", "notes.txt"]
+        )
+        self.assertEqual([os.path.basename(path) for path in images], ["scan.PNG"])
+        self.assertEqual([os.path.basename(path) for path in pdfs], ["deck.pdf"])
+        self.assertEqual([os.path.basename(path) for path in unsupported], ["notes.txt"])
+
+
+class PersistenceTests(unittest.TestCase):
+    def test_atomic_json_write_keeps_and_recovers_previous_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings_path = os.path.join(temp_dir, "settings.json")
+            atomic_write_json(settings_path, {"generation": 1, "label": "中文"})
+            atomic_write_json(settings_path, {"generation": 2})
+
+            with open(settings_path, "w", encoding="utf-8") as handle:
+                handle.write("{broken")
+
+            recovered, used_backup = load_json_with_backup(settings_path)
+            self.assertTrue(used_backup)
+            self.assertEqual(recovered, {"generation": 1, "label": "中文"})
 
 
 class AssetPathTests(unittest.TestCase):
@@ -54,6 +90,21 @@ class PowerPointExportTests(unittest.TestCase):
             self.assertEqual(len(presentation.slides), 1)
             self.assertTrue(any(shape.has_text_frame and "Editable text" in shape.text for shape in presentation.slides[0].shapes))
 
+    def test_failed_export_preserves_existing_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "existing.pptx")
+            original = b"keep this presentation"
+            with open(output_path, "wb") as handle:
+                handle.write(original)
+
+            exporter = PPTExporter()
+            with mock.patch.object(exporter.prs, "save", side_effect=OSError("disk full")):
+                self.assertFalse(exporter.save(output_path))
+
+            with open(output_path, "rb") as handle:
+                self.assertEqual(handle.read(), original)
+            self.assertEqual(os.listdir(temp_dir), ["existing.pptx"])
+
 
 class ApplicationSmokeTests(unittest.TestCase):
     def test_window_can_start_and_close_offscreen(self):
@@ -68,4 +119,3 @@ class ApplicationSmokeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

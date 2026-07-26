@@ -12,11 +12,13 @@ Daily use does not require a console. After installing the dependencies, double-
 
 - Ribbon interface organized into Home, View, and Settings tabs.
 - Multi-page workflow with image/PDF import, blank slides, duplication, ordering, and thumbnail navigation.
+- Drag-and-drop import for mixed image/PDF selections, with duplicate and unsupported-file filtering.
 - OCR for the current page or all pages, with an optional ROI for targeted processing.
 - Editable boxes with move, resize, text editing, font size, color, bold, alignment, background color, and opacity controls.
 - **Multi-select deletion:** hold `Ctrl` and click boxes to add or remove them from the selection, then press `Delete` to remove every selected box at once.
 - Three cleaning modes: Smart Clean, Solid Fill, and IOPaint, each available for the current page or all pages.
 - Editable PPTX output that remains easy to refine in PowerPoint.
+- Crash-safe settings and PPTX writes: a bad settings file can recover from its backup, and a failed export does not overwrite an existing presentation.
 - One-click launcher that uses the project environment and opens the GUI without a console window.
 
 ## Current interface
@@ -52,8 +54,8 @@ The View tab contains text-background, color-picking, opacity, and PowerPoint pr
 
 ## Requirements
 
-- 64-bit Windows 10 or 11.
-- Python 3.13; the bundled Windows setup and launch scripts check this version.
+- 64-bit Windows 10 version 1809 or later, or Windows 11, on Intel/AMD x86-64.
+- No preinstalled Python is required. The repair script downloads a checked, project-local CPython 3.13.14 runtime.
 - An internet connection for first-time dependency installation and OCR model downloads.
 - Several GB of free disk space is recommended for the Python environment and OCR models.
 
@@ -70,17 +72,25 @@ cd OCRPDF-TO-PPT
 
 You can also download and extract the repository ZIP.
 
-### 2. Install or repair dependencies
-
-For the first run, double-click `安装或修复依赖.bat`. It checks Python 3.13, creates or repairs `.venv-launcher`, installs the dependencies, and validates the key imports.
-
-### 3. Start the application
+### 2. Start the application
 
 Double-click `一键启动 OCRPDF-TO-PPT.bat`.
 
-The launcher runs a dependency preflight and opens the GUI through `pythonw.exe`. You therefore **do not need to run `python main.py` in a console**. If startup fails, inspect `logs/launcher.log` or run the dependency repair script again.
+The launcher checks the project-local `.runtime` and `.venv-launcher`. On a new device, in a freshly extracted directory, or after dependency damage, it downloads the official CPython 3.13.14 x64 NuGet runtime, verifies its pinned SHA-256 checksum, and creates or repairs the environment from `requirements-lock-win10.txt`. It then opens the GUI with that environment's `pythonw.exe`. You therefore **do not need to install Python or run `python main.py` in a console**.
+
+If automatic setup fails, double-click `安装或修复依赖.bat` to see the complete installation output. For a forced dependency reinstall, use `检查并修复程序.bat`. Typical causes are blocked NuGet/PyPI downloads, a corporate proxy, antivirus interference, a read-only project directory, or insufficient disk space.
 
 PaddleOCR/PaddleX may download models the first time OCR is used. Models remain in the local cache and are not uploaded to GitHub.
+
+### How cross-device startup works
+
+- The BAT and PowerShell scripts derive the project root from their own location. They do not depend on the original drive, Windows user name, or an absolute checkout path, and paths containing spaces or Chinese characters are supported.
+- The base Python runtime is downloaded into `.runtime\python313`; the installer does not depend on or change a system Python.
+- `.venv-launcher` is always created inside the current project. Startup explicitly sets `VIRTUAL_ENV` and disables user-level Python packages.
+- Dependencies are reproducible through the Windows lock file rather than whatever versions happen to be newest that day.
+- `.runtime`, `.venv-launcher`, and model folders are not uploaded to GitHub. A Git clone rebuilds them locally. If you copy the complete prepared folder between supported x64 Windows computers, startup repairs the moved virtual-environment paths before use.
+
+See [PORTABLE_COMPATIBILITY.md](PORTABLE_COMPATIBILITY.md) for the tested baseline, limitations, and unsupported platforms.
 
 ## Workflow
 
@@ -88,6 +98,7 @@ PaddleOCR/PaddleX may download models the first time OCR is used. Models remain 
 
 - Click Import Image or press `Ctrl+O`.
 - Click Import PDF or press `Ctrl+Shift+O`.
+- Or drag one or more supported images/PDFs directly onto the window.
 - PDF pages are rendered as images and added to the thumbnail list on the left.
 - You can also create blank slides, duplicate the current slide, delete slides, and change their order.
 
@@ -180,6 +191,7 @@ This manual `.venv` is separate from the launcher's `.venv-launcher` environment
 ## Configuration and privacy
 
 - Runtime configuration is stored locally in `settings.json`.
+- Settings are written atomically. The previous valid file is retained as `settings.json.bak` and is used automatically if the primary file is damaged.
 - Because it may contain local paths or private service endpoints, `settings.json` is excluded by `.gitignore`.
 - Copy `settings.example.json` when you need a safe template; it contains localhost endpoints only.
 - Virtual environments, logs, model caches, AI/cleaning caches, generated PDF/PPT files, and archives are excluded from Git.
@@ -190,9 +202,9 @@ This manual `.venv` is separate from the launcher's `.venv-launcher` environment
 ### Double-clicking the launcher does not open a window
 
 1. Inspect `logs/launcher.log`.
-2. Run `安装或修复依赖.bat` again.
-3. Confirm that `py -3.13` works.
-4. If security software blocked the scripts, allow the project's BAT, PowerShell, and `pythonw.exe` processes.
+2. Run `检查并修复程序.bat`.
+3. Confirm that NuGet and PyPI are reachable from the current network.
+4. If security software blocked the scripts, allow the project's BAT, PowerShell, and project-local `pythonw.exe` processes.
 
 ### The first OCR run is slow
 
@@ -216,14 +228,17 @@ Make sure the local IOPaint service is running and check the endpoint under Sett
 OCRPDF-TO-PPT/
 ├─ 一键启动 OCRPDF-TO-PPT.bat   # Daily launch entry point
 ├─ 安装或修复依赖.bat           # First-time setup and repair
+├─ 检查并修复程序.bat           # Forced dependency verification/reinstall
+├─ requirements-lock-win10.txt  # Reproducible Windows dependency set
 ├─ scripts/
-│  ├─ start.ps1                 # Preflight and console-free launch
+│  ├─ start.ps1                 # Auto-repair, preflight, and console-free launch
 │  ├─ setup.ps1                 # Python 3.13 environment setup
 │  └─ preflight.py              # Dependency validation
 ├─ launcher.pyw                 # Windows GUI launcher
 ├─ main.py                      # Ribbon UI and main workflow
 ├─ ocr_engine.py                # PaddleOCR 2.x/3.x compatibility
 ├─ ppt_export.py                # Editable PPTX export
+├─ persistence.py               # Atomic local settings and backup recovery
 ├─ settings.example.json        # Safe local configuration example
 ├─ docs/images/                 # Current interface screenshots
 └─ tests/                       # Core automated tests

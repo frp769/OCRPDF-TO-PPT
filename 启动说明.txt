@@ -3,13 +3,29 @@ OCRPDF-TO-PPT 启动说明
 
 日常使用：
   双击“一键启动 OCRPDF-TO-PPT.bat”。
+  新设备或全新目录中如果没有本地环境，一键启动会自动下载并校验
+  项目内 CPython 3.13.14，再根据 requirements-lock-win10.txt 创建环境。
+  不需要预先安装系统 Python，也不需要打开控制台运行 main.py。
 
-如果提示环境或依赖损坏：
-  双击“安装或修复依赖.bat”，等待完成后再启动。
+如果自动安装失败：
+  双击“安装或修复依赖.bat”查看完整错误。
+  需要强制重新安装全部锁定依赖时，双击“检查并修复程序.bat”。
+  请确认当前网络可访问 NuGet、PyPI，并且项目目录可写。
 
 运行环境：
-  程序使用项目内独立的 .venv-launcher（Python 3.13），不会使用原来
-  Python 3.14 创建的 .venv。这样可以兼容 PaddlePaddle / PaddleOCR。
+  基础解释器保存在 .runtime\python313，依赖环境保存在 .venv-launcher。
+  启动时禁用系统用户级 Python 包，不会混用其他 Python 环境。
+  Windows 锁定依赖版本用于保证 PaddlePaddle / PaddleOCR 兼容性。
+
+跨设备说明：
+  .runtime、.venv-launcher 和模型不会上传 GitHub；Git 克隆后首次启动会
+  自动创建。也可以完整复制已经准备好的项目文件夹到另一台受支持的
+  x64 Windows 电脑，启动器会自动修复移动后的虚拟环境路径。
+  项目脚本不绑定盘符、用户名或原目录，支持中文和带空格的路径。
+
+支持范围：
+  Windows 10 1809 及以上、Windows 11、Intel/AMD x86-64。
+  详细限制见 PORTABLE_COMPATIBILITY.md。
 
 日志：
   无窗口启动时如发生异常，详情保存在 logs\launcher.log。

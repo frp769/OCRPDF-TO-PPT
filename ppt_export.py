@@ -7,6 +7,7 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.dml.color import RGBColor
 from pptx.oxml.ns import qn
 import os
+import tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -580,13 +581,30 @@ class PPTExporter:
         Args:
             output_path: 输出路径
         """
+        temporary_path = None
         try:
-            self.prs.save(output_path)
+            output_path = os.path.abspath(output_path)
+            output_dir = os.path.dirname(output_path) or os.getcwd()
+            os.makedirs(output_dir, exist_ok=True)
+            file_descriptor, temporary_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(output_path)}.",
+                suffix=".tmp.pptx",
+                dir=output_dir,
+            )
+            os.close(file_descriptor)
+            self.prs.save(temporary_path)
+            os.replace(temporary_path, output_path)
             print(f"[OK] PPT已保存: {output_path}")
             return True
         except Exception as e:
             print(f"[X] PPT保存失败: {e}")
             return False
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    pass
 
 
 # 测试代码
